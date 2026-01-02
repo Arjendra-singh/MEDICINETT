@@ -1,0 +1,12 @@
+{
+    "name": "medicinett-root",
+    "version": "1.0.0",
+    "private": true,
+    "scripts": {
+        "install-all": "npm install && cd client && npm install && cd ../server && npm install",
+        "dev": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client\""
+    },
+    "devDependencies": {
+        "concurrently": "^8.2.2"
+    }
+}

@@ -1,0 +1,69 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-color: #f3f4f6;
+  font-family: 'Inter', sans-serif;
+  @apply transition-colors duration-200;
+}
+
+/* Dark mode body background and text */
+.dark body {
+  background-color: #0f172a;
+  /* slate-900 */
+  color: #e5e7eb;
+  /* gray-200 */
+}
+
+.card {
+  @apply bg-white rounded-xl shadow-md p-6 text-gray-900 transition-colors duration-200;
+}
+
+/* dark mode styles for components */
+.dark .card {
+  @apply bg-gray-800 text-gray-100 border border-gray-700;
+}
+
+.btn-primary {
+  @apply bg-blue-600 text-white px-6 py-3 rounded-full font-semibold hover:bg-blue-700 transition-colors flex items-center justify-center gap-2 shadow-sm;
+}
+
+.btn-secondary {
+  @apply bg-gray-200 text-gray-800 px-4 py-2 rounded-lg font-medium hover:bg-gray-300 transition-colors;
+}
+
+.dark .btn-secondary {
+  @apply bg-gray-700 text-gray-200 hover:bg-gray-600;
+}
+
+.status-badge {
+  @apply px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide;
+}
+
+/* Form Inputs */
+.input {
+  @apply w-full px-4 py-2 rounded-lg border border-gray-300 bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all;
+}
+
+.dark .input {
+  @apply bg-gray-700 border-gray-600 text-white placeholder-gray-400 focus:ring-blue-400;
+}
+
+/* Scrollbar for dark mode */
+.dark ::-webkit-scrollbar {
+  width: 8px;
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 4px;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
