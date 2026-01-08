@@ -40,8 +40,9 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ message: 'Missing required fields' });
         }
 
-        // Use timestamp for unique medicineNo
-        const nextNo = Date.now();
+        // Get the next incremental medicineNo
+        const lastMedicine = await Medicine.findOne().sort({ medicineNo: -1 });
+        const nextNo = lastMedicine ? lastMedicine.medicineNo + 1 : 1;
 
         const med = new Medicine({
             medicineNo: nextNo,
@@ -68,9 +69,19 @@ router.post('/report', async (req, res) => {
             return res.status(400).json({ message: 'No medicines data available to generate report.' });
         }
 
+        // Get logs and enrich with latest medicine data to ensure correct mapping
         const logs = await DailyLog.find({ date });
+        const enrichedLogs = logs.map(log => {
+            const med = medicines.find(m => m.medicineNo === log.medicineNo);
+            return {
+                ...log.toObject(),
+                // Override with fresh medicine data to ensure name/details are current
+                name: med?.name || log.name,
+                scheduledTime: med?.scheduledTime || log.scheduledTime
+            };
+        });
 
-        const filePath = await generateDailyReport(date, logs, medicines);
+        const filePath = await generateDailyReport(date, enrichedLogs, medicines);
 
         res.download(filePath, path.basename(filePath), (err) => {
             if (err) {
@@ -80,6 +91,131 @@ router.post('/report', async (req, res) => {
             }
         });
     } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// POST return report data (JSON) for on-screen reports and verification
+router.post('/report/data', async (req, res) => {
+    try {
+        const date = req.body.date || moment().format('YYYY-MM-DD');
+        const medicines = await Medicine.find().sort({ medicineNo: 1 });
+        const logs = await DailyLog.find({ date });
+
+        // Enrich logs with latest medicine info
+        const enrichedLogs = logs.map(log => {
+            const med = medicines.find(m => m.medicineNo === log.medicineNo);
+            return {
+                ...log.toObject(),
+                name: med?.name || log.name,
+                scheduledTime: med?.scheduledTime || log.scheduledTime,
+                timeSlot: med?.timeSlot || med?.timeSlot || 'Unknown'
+            };
+        });
+
+        // Prepare sorted medicines by slot and scheduled time
+        const timeSlotOrder = { 'Morning': 1, 'Noon': 2, 'Evening': 3, 'Night': 4 };
+        const sortedMeds = medicines.sort((a, b) => {
+            const slotDiff = (timeSlotOrder[a.timeSlot] || 99) - (timeSlotOrder[b.timeSlot] || 99);
+            if (slotDiff !== 0) return slotDiff;
+            return a.scheduledTime.localeCompare(b.scheduledTime);
+        });
+
+        // Build rows with required gap calculations
+        const rows = sortedMeds.map((med, idx) => {
+            const log = enrichedLogs.find(l => l.medicineNo === med.medicineNo);
+            const status = log ? log.status : 'PENDING';
+            const taken = log && log.takenTime ? moment(log.takenTime).format('HH:mm') : null;
+
+            // schedule vs taken deviation - validate times and format
+            let scheduleVsTaken = 'N/A';
+            try {
+                if (!med.scheduledTime || !taken) {
+                    scheduleVsTaken = 'N/A';
+                } else {
+                    const scheduled = moment(`${date}T${med.scheduledTime}`, 'YYYY-MM-DDTHH:mm', true);
+                    const actual = moment(`${date}T${taken}`, 'YYYY-MM-DDTHH:mm', true);
+                    if (!scheduled.isValid() || !actual.isValid()) {
+                        scheduleVsTaken = 'N/A';
+                    } else {
+                        const diffMs = actual.diff(scheduled);
+                        const absDur = moment.duration(Math.abs(diffMs));
+                        const hh = String(Math.floor(absDur.asHours())).padStart(2, '0');
+                        const mm = String(absDur.minutes()).padStart(2, '0');
+                        if (diffMs === 0) {
+                            scheduleVsTaken = 'On Time';
+                        } else {
+                            const sign = diffMs > 0 ? '+' : '-';
+                            scheduleVsTaken = `${sign}${hh}h ${mm}m`;
+                        }
+                    }
+                }
+            } catch (e) {
+                scheduleVsTaken = 'N/A';
+            }
+
+            return {
+                no: String(idx + 1).padStart(2, '0'),
+                slot: med.timeSlot,
+                medicineNo: med.medicineNo,
+                name: med.name,
+                scheduled: med.scheduledTime,
+                taken: taken || '-',
+                status,
+                scheduleVsTaken
+            };
+        });
+
+        // Calculate slot gaps (scheduled) and actual taken slot gaps per row (versus previous row)
+        for (let i = 0; i < rows.length; i++) {
+            const prev = rows[i - 1];
+            const cur = rows[i];
+            // Scheduled slot gap
+            if (prev) {
+                const [h1, m1] = prev.scheduled.split(':').map(Number);
+                const [h2, m2] = cur.scheduled.split(':').map(Number);
+                const mins1 = h1 * 60 + m1;
+                let mins2 = h2 * 60 + m2;
+                let diff = mins2 - mins1;
+                // Simplified same-day logic: if next time is earlier, treat as PM-ish and add 12 hours
+                if (diff < 0) {
+                    mins2 += 12 * 60; // add 12 hours
+                    diff = mins2 - mins1;
+                }
+                const gh = Math.floor(diff / 60);
+                const gm = diff % 60;
+                cur.scheduledSlotGap = `${String(gh).padStart(2,'0')}h ${String(gm).padStart(2,'0')}m`;
+            } else {
+                cur.scheduledSlotGap = '-';
+            }
+
+            // Actual taken slot gap
+            if (prev && prev.taken !== '-' && cur.taken !== '-') {
+                let prevTaken = moment(`${date}T${prev.taken}`);
+                let curTaken = moment(`${date}T${cur.taken}`);
+                let diffMs = curTaken.diff(prevTaken);
+                // Simplified same-day logic: if curTaken earlier, add 12 hours to curTaken
+                if (diffMs < 0) {
+                    curTaken = curTaken.add(12, 'hours');
+                    diffMs = curTaken.diff(prevTaken);
+                }
+                const dh = Math.floor(moment.duration(diffMs).asHours());
+                const dm = moment.duration(diffMs).minutes();
+                cur.actualTakenSlotGap = `${String(dh).padStart(2,'0')}h ${String(dm).padStart(2,'0')}m`;
+            } else {
+                cur.actualTakenSlotGap = '-';
+            }
+        }
+
+        const summary = {
+            taken: rows.filter(r => r.status === 'TAKEN').length,
+            missed: rows.filter(r => r.status === 'MISSED').length,
+            pending: rows.filter(r => r.status === 'PENDING').length
+        };
+
+        res.json({ date, rows, summary });
+    } catch (err) {
+        console.error('Report data error:', err);
         res.status(500).json({ message: err.message });
     }
 });
@@ -129,10 +265,10 @@ router.post('/seed', async (req, res) => {
     try {
         await Medicine.deleteMany({});
         const medicines = [
-            { medicineNo: 1, name: 'Paracetamol', scheduledTime: '09:00', frequency: 'Daily', timeSlot: 'Morning' },
-            { medicineNo: 2, name: 'Vitamin D', scheduledTime: '09:00', frequency: 'Daily', timeSlot: 'Morning' },
-            { medicineNo: 3, name: 'Amoxicillin', scheduledTime: '14:00', frequency: 'Daily', timeSlot: 'Noon' },
-            { medicineNo: 4, name: 'Ibuprofen', scheduledTime: '20:00', frequency: 'Daily', timeSlot: 'Night' }
+            { medicineNo: 1, name: 'Paracetamol', scheduledTime: '09:00', frequency: 'Daily', timeSlot: 'Morning', dosage: '' },
+            { medicineNo: 2, name: 'Vitamin D', scheduledTime: '09:30', frequency: 'Daily', timeSlot: 'Morning', dosage: '' },
+            { medicineNo: 3, name: 'Amoxicillin', scheduledTime: '14:00', frequency: 'Daily', timeSlot: 'Noon', dosage: '' },
+            { medicineNo: 4, name: 'Ibuprofen', scheduledTime: '20:00', frequency: 'Daily', timeSlot: 'Night', dosage: '' }
         ];
         await Medicine.insertMany(medicines);
         res.json({ message: 'Medicines seeded' });

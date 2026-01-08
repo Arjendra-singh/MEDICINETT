@@ -265,6 +265,18 @@ function App() {
         }
     };
 
+    // Fetch on-screen report data
+    const [reportData, setReportData] = useState(null);
+    const fetchReportData = async (date) => {
+        try {
+            const res = await axios.post(`${API_URL}/report/data`, { date });
+            setReportData(res.data);
+        } catch (err) {
+            console.error('Error fetching report data:', err);
+            alert('Failed to fetch report data');
+        }
+    };
+
     const [pendingDelete, setPendingDelete] = useState(null);
 
     const confirmDelete = (medicineNo) => setPendingDelete(medicineNo);
@@ -349,6 +361,9 @@ function App() {
                         <button onClick={() => generateReport()} className="btn-primary bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-700 dark:hover:bg-indigo-600">
                             <FaFilePdf /> Generate PDF
                         </button>
+                        <button onClick={() => fetchReportData()} className="btn-primary bg-gray-600 hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600">
+                            View Report
+                        </button>
                     </div>
                 </div>
 
@@ -390,6 +405,51 @@ function App() {
                 {voiceError && !voiceFlow.isOpen && (
                     <div className="max-w-md mx-auto mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg text-center">
                         <p className="text-sm text-red-600 dark:text-red-300">{voiceError}</p>
+                    </div>
+                )}
+
+                {/* On-screen Report */}
+                {reportData && (
+                    <div className="max-w-4xl mx-auto mb-6 p-6 bg-white dark:bg-gray-800 rounded-xl shadow-md border border-gray-200 dark:border-gray-700">
+                        <h3 className="text-lg font-bold text-gray-700 dark:text-gray-200 mb-4">Daily Report — {reportData.date}</h3>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm text-left text-gray-700 dark:text-gray-200">
+                                <thead className="bg-blue-50 dark:bg-gray-700">
+                                    <tr>
+                                        <th className="px-3 py-2">No.</th>
+                                        <th className="px-3 py-2">Slot</th>
+                                        <th className="px-3 py-2">Medicine</th>
+                                        <th className="px-3 py-2">Scheduled</th>
+                                        <th className="px-3 py-2">Taken</th>
+                                        <th className="px-3 py-2">Status</th>
+                                        <th className="px-3 py-2">Schedule vs Taken</th>
+                                        <th className="px-3 py-2">Scheduled Slot Gap</th>
+                                        <th className="px-3 py-2">Actual Taken Slot Gap</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {reportData.rows.map(r => (
+                                        <tr key={r.no} className="border-b">
+                                            <td className="px-3 py-2 font-mono">{r.no}</td>
+                                            <td className="px-3 py-2">{r.slot}</td>
+                                            <td className="px-3 py-2">{r.name}</td>
+                                            <td className="px-3 py-2">{r.scheduled}</td>
+                                            <td className="px-3 py-2">{r.taken}</td>
+                                            <td className="px-3 py-2">{r.status}</td>
+                                            <td className="px-3 py-2">{r.scheduleVsTaken || '-'}</td>
+                                            <td className="px-3 py-2">{r.scheduledSlotGap || '-'}</td>
+                                            <td className="px-3 py-2">{r.actualTakenSlotGap || '-'}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div className="mt-4">
+                            <div className="p-3 bg-gray-50 dark:bg-gray-900 rounded-md">
+                                <strong>Taken:</strong> {reportData.summary.taken} &nbsp; <strong>Missed:</strong> {reportData.summary.missed} &nbsp; <strong>Pending:</strong> {reportData.summary.pending}
+                            </div>
+                        </div>
                     </div>
                 )}
 

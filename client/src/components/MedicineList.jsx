@@ -40,10 +40,19 @@ const MedicineList = ({ medicines = [], timeSlot, onDelete, onUpdate, onSetTaken
   };
 
   const handleTakenChange = (id, value) => {
-    setEditingMap(prev => ({
-      ...prev,
-      [id]: { ...prev[id], takenTime: value }
-    }));
+    try {
+      setEditingMap(prev => {
+        if (!prev[id]) {
+          return prev;
+        }
+        return {
+          ...prev,
+          [id]: { ...prev[id], takenTime: value }
+        };
+      });
+    } catch (err) {
+      console.error('Error updating taken time:', err);
+    }
   };
 
   const saveEdit = (id) => {
@@ -52,11 +61,20 @@ const MedicineList = ({ medicines = [], timeSlot, onDelete, onUpdate, onSetTaken
   };
 
   const saveTaken = (id) => {
-    const time = editingMap[id]?.takenTime;
-    if (!time) return;
+    try {
+      const time = editingMap[id]?.takenTime;
+      if (!time || time.trim() === '') {
+        alert('Please set a valid time');
+        return;
+      }
 
-    const today = new Date().toISOString().slice(0, 10);
-    onSetTaken?.(id, `${today}T${time}:00`);
+      const today = new Date().toISOString().slice(0, 10);
+      const isoTime = `${today}T${time}:00`;
+      onSetTaken?.(id, isoTime);
+    } catch (err) {
+      console.error('Error saving taken time:', err);
+      alert('Error saving time');
+    }
   };
 
   return (
@@ -132,15 +150,13 @@ const MedicineList = ({ medicines = [], timeSlot, onDelete, onUpdate, onSetTaken
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <div className="flex gap-2">
-                    <input
-                      type="time"
-                      className="input text-sm py-1"
+                  <div className="flex gap-2 items-start">
+                    <TimePickerSpinner 
                       value={edit?.takenTime || ''}
-                      onChange={e => handleTakenChange(med.medicineNo, e.target.value)}
+                      onChange={(val) => handleTakenChange(med.medicineNo, val)}
                     />
                     <button
-                      className="btn-primary px-3 py-1 text-xs whitespace-nowrap"
+                      className="btn-primary px-3 py-1 text-xs whitespace-nowrap mt-1"
                       onClick={() => saveTaken(med.medicineNo)}
                     >
                       Set Time
@@ -200,6 +216,26 @@ const StatusIcon = ({ status }) => {
     case 'MISSED': return <FaTimesCircle className="text-red-500 text-xl" />;
     default: return null;
   }
+};
+
+// Simple Time Picker Component
+const TimePickerSpinner = ({ value, onChange }) => {
+  const handleChange = (e) => {
+    const newValue = e.target.value;
+    if (newValue) {
+      onChange(newValue);
+    }
+  };
+
+  return (
+    <input
+      type="time"
+      value={value || ''}
+      onChange={handleChange}
+      className="input text-sm py-2 px-3 w-32 cursor-pointer"
+      style={{ fontSize: '16px' }}
+    />
+  );
 };
 
 export default MedicineList;
